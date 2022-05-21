@@ -8,40 +8,55 @@ import tkinter as tk
 import numpy as np
 import random
 from tkinter import filedialog
-import pandas as pd
 
 
 class SudokuCellsNum:
     def __init__(self):
         self.cells = []
+        groups = [[] for _ in range(9)]
         for y in range(0, 9):
             cells = []
             for x in range(0, 9):
                 if (0 <= x <= 2) & (0 <= y <= 2):
-                    cell = SudokuCellNum(y + 1, x + 1, 1)
+                    group = 0
                 elif (3 <= x <= 5) & (0 <= y <= 2):
-                    cell = SudokuCellNum(y + 1, x + 1, 2)
+                    group = 1
                 elif (6 <= x <= 8) & (0 <= y <= 2):
-                    cell = SudokuCellNum(y + 1, x + 1, 3)
+                    group = 2
                 elif (0 <= x <= 2) & (3 <= y <= 5):
-                    cell = SudokuCellNum(y + 1, x + 1, 4)
+                    group = 3
                 elif (3 <= x <= 5) & (3 <= y <= 5):
-                    cell = SudokuCellNum(y + 1, x + 1, 5)
+                    group = 4
                 elif (6 <= x <= 8) & (3 <= y <= 5):
-                    cell = SudokuCellNum(y + 1, x + 1, 6)
+                    group = 5
                 elif (0 <= x <= 2) & (6 <= y <= 8):
-                    cell = SudokuCellNum(y + 1, x + 1, 7)
+                    group = 6
                 elif (3 <= x <= 5) & (6 <= y <= 8):
-                    cell = SudokuCellNum(y + 1, x + 1, 8)
+                    group = 7
                 else:
-                    cell = SudokuCellNum(y + 1, x + 1, 9)
+                    group = 8
+                cell = SudokuCellNum(y, x, group)
                 cells.append(cell)
+                groups[group].append(cell)
             self.cells.append(cells)
+        self.group = []
+        for n in range(0, 9):
+            self.group.append(SudokuGroup(n, groups[n]))
+
+        self.rows = []
+        for n in range(0, 9):
+            self.rows.append(SudokuGroup(n, self.cells[n][:]))
+
+        self.columns = []
+        for n in range(0, 9):
+            self.columns.append(SudokuGroup(n, [r[n] for r in self.cells]))
 
     def clear(self):
         for y in range(0, 9):
             for x in range(0, 9):
                 self.cells[y][x].clear()
+        for n in range(0, 9):
+            self.group[n].clear()
 
     def getter_cell(self, yy, xx):
         return self.cells[yy][xx]
@@ -52,30 +67,69 @@ class SudokuCellsNum:
     def random_start(self):
         for y in range(0, 9):
             for x in range(0, 9):
-                self.cells[y][x].set_fix_value(random.randint(0, 9))
+                self.cells[y][x].set_init_value(random.randint(0, 9))
 
-    def import_csv(self, str_cells_):
+    def import_csv(self, cells):
         for y in range(0, 9):
             for x in range(0, 9):
-                self.cells[y][x].set_fix_value(int(str_cells_.T[y][x]))
+                self.cells[y][x].set_init_value(int(cells[y][x]))
 
     def save_csv(self, fle):
         cells = np.zeros((9, 9))
         for y in range(0, 9):
             for x in range(0, 9):
-                cells[y][x] = self.cells[y][x].fix_value
-        np.savetxt(fle, cells.T, fmt='%d', delimiter=',')
+                cells[y][x] = int(self.cells[y][x].fix_value)
+        np.savetxt(fle, cells, fmt='%d', delimiter=',')
 
     def try_solve(self):
-        for y in range(0, 9):
-            for x in range(0, 9):
-                value = self.cells[y][x].fix_value
-                if value > 0:
-                    for n in range(0, 9):
-                        if n != x:
-                            self.cells[y][n].eliminate_candidate_num(value)
-                        if n != y:
-                            self.cells[n][x].eliminate_candidate_num(value)
+        for n in range(0, 9):
+            self.group[n].group_organizer()
+            self.rows[n].group_organizer()
+            self.columns[n].group_organizer()
+
+
+class SudokuGroup:
+    def __init__(self, n, cells):
+        self.num = n
+        self.is_fix_num = np.zeros(9)
+        self.cells = cells
+        self.num_candidates = np.zeros(9)
+        self.group_num_set()
+
+    def group_organizer(self):
+        self.delete_candidate()
+        self.find_only_one()
+        self.group_num_set()
+
+    def clear(self):
+        self.is_fix_num[:] = 0
+        self.num_candidates[:] = 0
+
+    def group_num_set(self):
+        self.is_fix_num[:] = 0
+        for n in range(0, 9):
+            if self.cells[n].is_fix == 1:
+                self.is_fix_num[self.cells[n].fix_value - 1] = 1
+
+        self.num_candidates[:] = 0
+        for n in range(0, 9):
+            self.num_candidates[:] = self.num_candidates[:] + self.cells[n].candidates
+
+    def delete_candidate(self):
+        for n in range(0, 9):
+            if self.cells[n].is_fix == 1:
+                for m in range(0, 9):
+                    if n != m:
+                        self.cells[m].eliminate_candidate_num(self.cells[n].fix_value)
+        self.group_num_set()
+
+    def find_only_one(self):
+        for val in range(0, 9):
+            if self.num_candidates[val] == 1:
+                for n in range(0, 9):
+                    if self.cells[n].candidates[val] == 1:
+                        self.cells[n].set_fix_value(val + 1)
+        self.group_num_set()
 
 
 class SudokuCellNum:
@@ -86,11 +140,13 @@ class SudokuCellNum:
         self.y = yy
         self.x = xx
         self.group = n
+        self.initial_fix = 0
 
     def clear(self):
         self.candidates[:] = 1
         self.is_fix = 0
         self.fix_value = 0
+        self.initial_fix = 0
 
     def set_fix_value(self, value):
         if 1 <= value <= 9:
@@ -99,17 +155,23 @@ class SudokuCellNum:
             self.is_fix = 1
             self.fix_value = value
 
+    def set_init_value(self, value):
+        if 1 <= value <= 9:
+            self.candidates[:] = 0
+            self.candidates[value - 1] = 1
+            self.is_fix = 1
+            self.fix_value = value
+            self.initial_fix = 1
+
     def eliminate_candidate_num(self, value):
         self.candidates[value - 1] = 0
         self.check_is_one_candidate()
-        self.is_fix = 1
-        self.fix_value = value
 
     def check_is_one_candidate(self):
-        if np.sum(self.candidates) == 1:
+        if (self.is_fix == 0) & (np.sum(self.candidates) == 1):
             for n in range(0, 9):
                 if self.candidates[n] == 1:
-                    self.set_fix_value(n)
+                    self.set_fix_value(n + 1)
 
 
 class Application(tk.Frame):
@@ -127,9 +189,19 @@ class Application(tk.Frame):
             for y in range(0, 9):
                 cell = self.sudoku_num.getter_cell(y, x)
                 self.main_cells[y][x].delete(0, tk.END)
-                self.main_cells[y][x].insert(0, str(cell.fix_value))
+                if cell.is_fix == 1:
+                    self.main_cells[y][x].insert(0, str(cell.fix_value))
+                if cell.initial_fix == 1:
+                    self.main_cells[y][x].configure(fg="#000088")
+                else:
+                    self.main_cells[y][x].configure(fg="#000000")
+
                 for n in range(0, 9):
                     if cell.candidates[n] == 1:
+                        if cell.is_fix == 1:
+                            self.sub_cells[y][x][n]['fg'] = "#FF0000"
+                        else:
+                            self.sub_cells[y][x][n]['fg'] = "#000000"
                         self.sub_cells[y][x][n]['text'] = str(n + 1)
                     else:
                         self.sub_cells[y][x][n]['text'] = ""
@@ -153,12 +225,14 @@ class Application(tk.Frame):
         self.sync_num_to_board()
 
     def file_load_sudoku(self):
-        typ = [('', '*.txt')]
+        typ = [('', '*.txt'), ('', '.csv')]
         d = 'C:\\'
         fle = filedialog.askopenfilename(filetypes=typ, initialdir=d)
         if fle:
-            str_cells = np.loadtxt(fle, dtype='unicode', delimiter=',')
-            self.sudoku_num.import_csv(str_cells)
+            self.sudoku_num.clear()
+            cells = np.genfromtxt(fle, delimiter=',', filling_values=0, encoding='utf8')
+            self.sudoku_num.import_csv(cells)
+            self.sync_num_to_board()
 
     def file_save_sudoku(self):
         typ = [('', '*.txt')]
@@ -185,9 +259,9 @@ class Application(tk.Frame):
         button_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
         mainframe = tk.Frame(self.master, relief=tk.RIDGE, bd=2)
-        for x in range(0, 9):
+        for y in range(0, 9):
             tmp_cells = []
-            for y in range(0, 9):
+            for x in range(0, 9):
                 txt = tk.Entry(mainframe, width=6, font=("Calibri", 18))
                 txt.grid(row=y, column=x)
                 if ((0 <= x <= 2) | (6 <= x <= 8)) & ((0 <= y <= 2) | (6 <= y <= 8)) \
@@ -198,9 +272,9 @@ class Application(tk.Frame):
         mainframe.pack(side=tk.TOP, fill=tk.X)
         subframe = tk.Frame(self.master, relief=tk.RIDGE, bd=2)
 
-        for x in range(0, 9):
+        for y in range(0, 9):
             tmp_cells = []
-            for y in range(0, 9):
+            for x in range(0, 9):
                 sf = tk.Frame(subframe, relief=tk.RIDGE, bd=0.5)
                 sf.grid(row=y, column=x)
                 if ((0 <= x <= 2) | (6 <= x <= 8)) & ((0 <= y <= 2) | (6 <= y <= 8)) \
@@ -220,8 +294,8 @@ class Application(tk.Frame):
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.attributes("-topmost", False)
+    root.attributes("-topmost", True)
     root.title("Sudoku")
-    root.geometry("800x750")
+    root.geometry("700x780")
     app = Application(master=root)
     app.mainloop()
