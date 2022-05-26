@@ -12,6 +12,64 @@ from tkinter import messagebox
 import copy
 
 
+class SudokuGroup:
+    def __init__(self, n, cells, type_group):
+        self.num = n
+        self.is_fix_num = np.zeros(9)
+        self.cells = cells
+        self.num_candidates = np.zeros(9) + 9
+        self.candidates_position = []
+        self.group_num_set()
+        self.type = type_group
+
+    def is_exist_cell(self, yy, xx):
+        for n in range(0, 9):
+            if (self.cells[n].x == xx) & (self.cells[n].y == yy):
+                return n
+        return -1
+
+    def group_organizer(self):
+        self.delete_candidate()
+        self.find_only_one()
+        self.group_num_set()
+
+    def value_clear(self):
+        self.is_fix_num[:] = 0
+        for cells in self.cells:
+            cells.value_clear()
+        self.group_num_set()
+
+    def group_num_set(self):
+        self.is_fix_num[:] = 0
+        self.num_candidates[:] = 0
+        self.candidates_position = [[] for _ in range(9)]
+
+        for n in range(0, 9):
+            if self.cells[n].is_fix == 1:
+                self.is_fix_num[self.cells[n].fix_value - 1] = 1
+            self.num_candidates[:] = self.num_candidates[:] + self.cells[n].candidates
+
+            for val in range(0, 9):
+                if self.cells[n].candidates[val] == 1:
+                    self.candidates_position[val].append(n)
+
+    def delete_candidate(self):
+        for n in range(0, 9):
+            if self.cells[n].is_fix == 1:
+                for m in range(0, 9):
+                    if n != m:
+                        self.cells[m].eliminate_candidate_num(self.cells[n].fix_value)
+        self.group_num_set()
+
+    def find_only_one(self):
+        for val in range(0, 9):
+            if self.num_candidates[val] == 1:
+                for n in range(0, 9):
+                    if self.cells[n].candidates[val] == 1:
+                        self.cells[n].set_fix_value(val + 1)
+        self.group_num_set()
+
+
 class SudokuCellsNum:
     def __init__(self):
         self.cells = []
@@ -53,18 +111,37 @@ class SudokuCellsNum:
         for n in range(0, 9):
             self.columns.append(SudokuGroup(n, [r[n] for r in self.cells], type_group="column"))
 
-    def clear(self):
+    def display(self, mark):
+        print(mark)
         for y in range(0, 9):
             for x in range(0, 9):
-                self.cells[y][x].clear()
+                print(self.cells[y][x].fix_value, end=' ')
+            print("")
+        print("")
+
+    def clear(self):
+        self.__init__()
+
+    def value_clear(self):
+        for cel_row in self.cells:
+            for cel in cel_row:
+                cel.value_clear()
         for n in range(0, 9):
-            self.group[n].clear()
+            self.group[n].value_clear()
+            self.rows[n].value_clear()
+            self.columns[n].value_clear()
 
     def getter_cell(self, yy, xx):
         return self.cells[yy][xx]
 
     def set_fix_value(self, yy, xx, value):
         self.cells[yy][xx].set_fix_value(int(value))
+
+    def set_init_value(self, yy, xx, value):
+        self.cells[yy][xx].set_init_value(int(value))
+
+    def eliminate_candidate(self, yy, xx, value):
+        self.cells[yy][xx].eliminate_candidate_num(int(value))
 
     def random_start(self):
         for y in range(0, 9):
@@ -92,12 +169,12 @@ class SudokuCellsNum:
     def try_solve2(self):
         for n in range(0, 9):
             for n2 in range(0, 9):
-                one_group_candidate(self.group[n], self.rows[n2])
-                one_group_candidate(self.group[n], self.columns[n2])
-                one_group_candidate(self.rows[n], self.group[n2])
-                one_group_candidate(self.rows[n], self.columns[n2])
-                one_group_candidate(self.columns[n], self.group[n2])
-                one_group_candidate(self.columns[n], self.rows[n2])
+                SudokuFunctions.one_group_candidate(self.group[n], self.rows[n2])
+                SudokuFunctions.one_group_candidate(self.group[n], self.columns[n2])
+                SudokuFunctions.one_group_candidate(self.rows[n], self.group[n2])
+                SudokuFunctions.one_group_candidate(self.rows[n], self.columns[n2])
+                SudokuFunctions.one_group_candidate(self.columns[n], self.group[n2])
+                SudokuFunctions.one_group_candidate(self.columns[n], self.rows[n2])
 
     def is_game_progress(self):
         for n in range(0, 9):
@@ -107,6 +184,22 @@ class SudokuCellsNum:
                 return -1  # Failure
             if np.any(self.columns[n].num_candidates == 0):
                 return -1  # Failure
+            for n2 in range(0, 8):
+                val1 = self.group[n].cells[n2].fix_value
+                if val1 != 0:
+                    for n3 in range(n2 + 1, 9):
+                        if val1 == self.group[n].cells[n3].fix_value:
+                            return -1
+                val2 = self.rows[n].cells[n2].fix_value
+                if val2 != 0:
+                    for n3 in range(n2 + 1, 9):
+                        if val2 == self.rows[n].cells[n3].fix_value:
+                            return -1
+                val3 = self.columns[n].cells[n2].fix_value
+                if val3 != 0:
+                    for n3 in range(n2 + 1, 9):
+                        if val3 == self.columns[n].cells[n3].fix_value:
+                            return -1
 
         for n in range(0, 9):
             if np.any(self.group[n].num_candidates >= 2):
@@ -118,82 +211,70 @@ class SudokuCellsNum:
 
         return 1  # clear
 
-def one_group_candidate(group1, group2):
-    for val in range(0, 9):
-        is_do = True
-        is_protect = np.zeros(9)
-        if 2 <= group1.num_candidates[val] <= 3:
-            for n in range(0, len(group1.candidates_position[val])):
-                temp_cell = group1.cells[group1.candidates_position[val][n]]
-                is_exist = group2.is_exist_cell(yy=temp_cell.y, xx=temp_cell.x)
-                if is_exist == -1:
-                    is_do = False
-                    break
-                else:
-                    is_protect[is_exist] = 1
-        else:
-            is_do = False
+    def go_until_stack_solve(self):
+        while True:
+            copy_node = copy.deepcopy(self)
+            self.try_solve()
+            self.try_solve2()
+            if self.is_game_progress() == -1:
+                return -1
+            if SudokuFunctions.sudoku_matching(self, copy_node):
+                return self.is_game_progress()
 
-        if is_do:
-            for n in range(0, 9):
-                if is_protect[n] != 1:
-                    group2.cells[n].eliminate_candidate_num(value=val + 1)
+    def find_assuming_cell(self):
+        for n in range(2, 10):
+            for y in range(0, 9):
+                for x in range(0, 9):
+                    find_candidates = (self.cells[y][x].candidates == 1)
+                    if np.count_nonzero(find_candidates) == n:
+                        assuming_val = np.where(find_candidates)[0] + 1
+                        return assuming_val, self.getter_cell(y, x)
 
+        return 0, self.getter_cell(0, 0)
 
-class SudokuGroup:
-    def __init__(self, n, cells, type_group):
-        self.num = n
-        self.is_fix_num = np.zeros(9)
-        self.cells = cells
-        self.num_candidates = np.zeros(9)
-        self.candidates_position = []
-        self.group_num_set()
-        self.type = type_group
+    def try_and_error(self):
+        self.go_until_stack_solve()
+        while True:
+            self.display("A")
+            assuming_val, assuming_cell = self.find_assuming_cell()
+            copy_node = copy.deepcopy(self)
+            copy_node.set_fix_value(assuming_cell.y, assuming_cell.x, assuming_val[0])
+            copy_node.display("B")
+            try_error_result = copy_node.go_until_stack_solve()
+            copy_node.display("C")
 
-    def is_exist_cell(self, yy, xx):
-        for n in range(0, 9):
-            if (self.cells[n].x == xx) & (self.cells[n].y == yy):
-                return n
-        return -1
+            if try_error_result == 1:
+                self.deep_copy(copy_node)
+                self.go_until_stack_solve()
+            elif try_error_result == -1:
+                self.eliminate_candidate(assuming_cell.y, assuming_cell.x, assuming_val[0])
+                self.display("D")
+                try_error_result = self.go_until_stack_solve()  # proceed solving
+                # when it returns -1, current node has no possible resolution because both values don't work
+                # it is OK if result is 0. It can go to next assumption as do-while loop
+                self.display("E")
+            else:
+                try_error_result = copy_node.try_and_error()
+                copy_node.display("F")
+                # try to find deeper resolution underneath of copy node
+                # it must return either -1 or 1. never be zero. If it is zero, it means
+                # when it returns -1, copy node has no possible resolution because both values of assuming don't work
+                if try_error_result == 1:
+                    self.deep_copy(copy_node)
+                    self.go_until_stack_solve()
 
-    def group_organizer(self):
-        self.delete_candidate()
-        self.find_only_one()
-        self.group_num_set()
+            if try_error_result == 1:
+                break
+            elif try_error_result == -1:  # no resolvable
+                break
+        return try_error_result
 
-    def clear(self):
-        self.is_fix_num[:] = 0
-        self.num_candidates[:] = 0
-
-    def group_num_set(self):
-        self.is_fix_num[:] = 0
-        self.num_candidates[:] = 0
-        self.candidates_position = [[] for _ in range(9)]
-
-        for n in range(0, 9):
-            if self.cells[n].is_fix == 1:
-                self.is_fix_num[self.cells[n].fix_value - 1] = 1
-            self.num_candidates[:] = self.num_candidates[:] + self.cells[n].candidates
-
-            for val in range(0, 9):
-                if self.cells[n].candidates[val] == 1:
-                    self.candidates_position[val].append(n)
-
-    def delete_candidate(self):
-        for n in range(0, 9):
-            if self.cells[n].is_fix == 1:
-                for m in range(0, 9):
-                    if n != m:
-                        self.cells[m].eliminate_candidate_num(self.cells[n].fix_value)
-        self.group_num_set()
-
-    def find_only_one(self):
-        for val in range(0, 9):
-            if self.num_candidates[val] == 1:
-                for n in range(0, 9):
-                    if self.cells[n].candidates[val] == 1:
-                        self.cells[n].set_fix_value(val + 1)
-        self.group_num_set()
+    def deep_copy(self, in_node):
+        self.clear()
+        self.cells = copy.deepcopy(in_node.cells)
+        self.group = copy.deepcopy(in_node.group)
+        self.rows = copy.deepcopy(in_node.rows)
+        self.columns = copy.deepcopy(in_node.columns)
 
 
 class SudokuCellNum:
@@ -211,6 +292,10 @@ class SudokuCellNum:
         self.is_fix = 0
         self.fix_value = 0
         self.initial_fix = 0
+
+    def value_clear(self):
+        if self.initial_fix == 0:
+            self.clear()
 
     def set_fix_value(self, value):
         if 1 <= value <= 9:
@@ -236,6 +321,38 @@ class SudokuCellNum:
             for n in range(0, 9):
                 if self.candidates[n] == 1:
                     self.set_fix_value(n + 1)
+
+
+class SudokuFunctions:
+    @staticmethod
+    def sudoku_matching(sudoku1: SudokuCellsNum, sudoku2: SudokuCellsNum):
+        for y in range(0, 9):
+            for x in range(0, 9):
+                if any(sudoku1.cells[y][x].candidates != sudoku2.cells[y][x].candidates):
+                    return False
+        return True
+
+    @staticmethod
+    def one_group_candidate(group1: SudokuGroup, group2: SudokuGroup):
+        for val in range(0, 9):
+            is_do = True
+            is_protect = np.zeros(9)
+            if 2 <= group1.num_candidates[val] <= 3:
+                for n in range(0, len(group1.candidates_position[val])):
+                    temp_cell = group1.cells[group1.candidates_position[val][n]]
+                    is_exist = group2.is_exist_cell(yy=temp_cell.y, xx=temp_cell.x)
+                    if is_exist == -1:
+                        is_do = False
+                        break
+                    else:
+                        is_protect[is_exist] = 1
+            else:
+                is_do = False
+
+            if is_do:
+                for n in range(0, 9):
+                    if is_protect[n] != 1:
+                        group2.cells[n].eliminate_candidate_num(value=val + 1)
 
 
 class Application(tk.Frame):
@@ -271,27 +388,36 @@ class Application(tk.Frame):
                         self.sub_cells[y][x][n]['text'] = ""
 
     def copy_board_to_num(self):
+        self.sudoku_num.clear()
         for x in range(0, 9):
             for y in range(0, 9):
-                value = int(self.main_cells[y][x].get())
-                self.sudoku_num.set_fix_value(y, x, value)
+                value = self.main_cells[y][x].get()
+                if str.isdigit(value):
+                    self.sudoku_num.set_init_value(y, x, value)
+        self.sync_num_to_board()
 
     def clear_sudoku(self):
-        self.sudoku_num.clear()
+        self.sudoku_num.value_clear()
         self.sync_num_to_board()
 
     def solve_sudoku(self):
-        self.sudoku_num.try_solve()
+        result = self.sudoku_num.go_until_stack_solve()
         self.sync_num_to_board()
-        self.sudoku_num.try_solve2()
-        self.sync_num_to_board()
-        if self.sudoku_num.is_game_progress() == 1:
+        if result == 1:
             messagebox.showinfo("Sudoku", "Game Clear")
-        elif self.sudoku_num.is_game_progress() == -1:
+        elif result == -1:
+            messagebox.showinfo("Sudoku", "Failure to solve")
+
+    def solve_sudoku2(self):
+        result = self.sudoku_num.try_and_error()
+        self.sync_num_to_board()
+        if result == 1:
+            messagebox.showinfo("Sudoku", "Game Clear")
+        elif result == -1:
             messagebox.showinfo("Sudoku", "Failure to solve")
 
     def new_game_start(self):
-        self.sudoku_num.random_start()
+        self.sudoku_num.clear()
         self.sync_num_to_board()
 
     def file_load_sudoku(self):
@@ -319,6 +445,8 @@ class Application(tk.Frame):
         input_button.pack(side=tk.LEFT)
         auto_button = tk.Button(button_frame, width=10, text="Auto solve", command=self.solve_sudoku)
         auto_button.pack(side=tk.LEFT)
+        auto_button2 = tk.Button(button_frame, width=10, text="Auto solve #2", command=self.solve_sudoku2)
+        auto_button2.pack(side=tk.LEFT)
         clear_button = tk.Button(button_frame, width=10, text="Clear", command=self.clear_sudoku)
         clear_button.pack(side=tk.LEFT)
         file_load_button = tk.Button(button_frame, width=10, text="file load", command=self.file_load_sudoku)
